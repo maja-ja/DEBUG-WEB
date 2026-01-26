@@ -19,10 +19,10 @@ if 'raw_df' not in st.session_state:
 df_original = st.session_state.raw_df.copy()
 
 # 建立比對特徵
+# --- 嘗試更寬鬆的掃描 (只看單字和分類) ---
 df_original['check_key'] = (
     df_original['word'].str.lower().str.strip() + "|" + 
-    df_original['category'].str.lower().str.strip() + "|" + 
-    df_original['definition'].str.lower().str.strip()
+    df_original['category'].str.lower().str.strip()
 )
 
 # 找出重複的項目 (僅為了顯示給你看哪些被刪了)
