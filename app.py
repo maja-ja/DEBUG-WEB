@@ -1,62 +1,60 @@
 import streamlit as st
 import pandas as pd
+import re
 
 def load_data():
     sheet_id = "1W1ADPyf5gtGdpIEwkxBEsaJ0bksYldf4AugoXnq6Zvg"
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
     df = pd.read_csv(url)
+    # 強制轉字串並處理
     df = df.astype(str).replace('nan', '').fillna('')
     return df
 
-st.set_page_config(layout="wide")
-st.title("⚡ 一鍵自動去重工具")
-st.caption("邏輯：自動偵測「單字+分類+定義」完全重複的項目，僅保留第一筆，其餘一律刪除。")
+st.title("⚡ 強力去重模式")
+st.caption("如果自動清理無效，請使用此模式。我們會強力移除所有隱藏空格與換行。")
 
 if 'raw_df' not in st.session_state:
     st.session_state.raw_df = load_data()
 
-# --- 核心清理邏輯 ---
-df_original = st.session_state.raw_df.copy()
+df = st.session_state.raw_df.copy()
 
-# 建立比對特徵
-# --- 嘗試更寬鬆的掃描 (只看單字和分類) ---
-df_original['check_key'] = (
-    df_original['word'].str.lower().str.strip() + "|" + 
-    df_original['category'].str.lower().str.strip()
-)
+# --- 強力清洗函數 ---
+def heavy_clean(text):
+    # 移除所有換行、分號、空格，並轉小寫
+    text = re.sub(r'\s+', '', text) # 移除所有空白字元 (\n, \t, space)
+    return text.lower().strip()
 
-# 找出重複的項目 (僅為了顯示給你看哪些被刪了)
-duplicate_mask = df_original.duplicated(subset=['check_key'], keep='first')
-to_delete_df = df_original[duplicate_mask]
+# 建立「強力比對金鑰」：只看單字和分類
+df['word_clean'] = df['word'].apply(heavy_clean)
+df['cat_clean'] = df['category'].apply(heavy_clean)
+df['match_key'] = df['word_clean'] + "|" + df['cat_clean']
 
-# 執行去重 (只保留 first)
-df_cleaned = df_original.drop_duplicates(subset=['check_key'], keep='first').drop(columns=['check_key'])
+# 找出重複
+duplicates = df[df.duplicated(subset=['match_key'], keep='first')]
 
-# --- 介面顯示 ---
-col1, col2 = st.columns(2)
-with col1:
-    st.metric("原始總筆數", len(df_original))
-with col2:
-    st.metric("清理後筆數", len(df_cleaned), delta=f"-{len(to_delete_df)} 筆")
-
-if not to_delete_df.empty:
-    with st.expander("📝 查看即將被刪除的「第二筆以後」清單"):
-        st.dataframe(to_delete_df[['word', 'category', 'example', 'translation']], use_container_width=True)
+if not duplicates.empty:
+    st.warning(f"🚀 偵測到 {len(duplicates)} 筆隱藏重複項！")
     
-    if st.button("🔥 確認執行自動清理並下載", type="primary", use_container_width=True):
+    # 預覽被抓出來的壞傢伙
+    st.dataframe(duplicates[['word', 'category', 'example']], use_container_width=True)
+    
+    if st.button("🔥 執行強力清理", type="primary", use_container_width=True):
+        # 只保留第一筆
+        df_cleaned = df.drop_duplicates(subset=['match_key'], keep='first')
+        # 移除輔助欄位
+        df_cleaned = df_cleaned.drop(columns=['word_clean', 'cat_clean', 'match_key'])
+        
         st.session_state.raw_df = df_cleaned
-        st.success("清理完成！")
+        st.success(f"清理完畢！已移除 {len(duplicates)} 筆。")
         st.rerun()
 else:
-    st.success("✅ 檢查完畢，目前資料庫非常乾淨，沒有重複項。")
+    st.info("💡 連強力比對都找不到重複，這代表這 1642 筆的「單字+分類」組合都是獨一無二的。")
+    st.write("如果你還是覺得有重複，可能是因為同一個單字被分到了『不同的 Category』。")
 
-# --- 匯出功能 ---
+# --- 檢索測試 ---
 st.divider()
-final_csv = st.session_state.raw_df.to_csv(index=False).encode('utf-8-sig')
-st.download_button(
-    "📥 下載清理後的資料庫 (CSV)",
-    final_csv,
-    "cleaned_database_auto.csv",
-    "text/csv",
-    use_container_width=True
-)
+search = st.text_input("🔍 輸入一個你覺得重複的單字來手動檢查：")
+if search:
+    test = df[df['word'].str.contains(search, case=False)]
+    st.write(f"搜尋結果：找到 {len(test)} 筆")
+    st.table(test[['word', 'category', 'definition']])
