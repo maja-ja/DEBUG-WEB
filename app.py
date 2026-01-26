@@ -5,88 +5,83 @@ def load_data():
     sheet_id = "1W1ADPyf5gtGdpIEwkxBEsaJ0bksYldf4AugoXnq6Zvg"
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
     df = pd.read_csv(url)
-    # 強制清洗資料
+    # 強制清洗資料，處理空值
     df = df.astype(str).replace('nan', '').fillna('')
     return df
 
-st.title("🎯 精準去重工具 (勾選刪除版)")
-st.caption("規則：單字 + 分類 + 定義 完全一致才會判定為重複。一字多義會被安全保留。")
+st.title("🎯 精準去重工具 (例句對照版)")
+st.caption("根據 **例句與翻譯** 來判斷要保留哪一筆重複單字。")
 
 if 'raw_df' not in st.session_state:
     st.session_state.raw_df = load_data()
 
-# 備份原始資料進行運算
+# 備份原始資料
 df = st.session_state.raw_df.copy()
 
-# --- 核心邏輯：建立聯合索引來判斷重複 ---
+# --- 核心邏輯：判斷完全重複 (單字+分類+定義) ---
 df['check_key'] = (
     df['word'].str.lower().str.strip() + "|" + 
     df['category'].str.lower().str.strip() + "|" + 
     df['definition'].str.lower().str.strip()
 )
 
-# 找出重複項 (keep=False 代表所有重複的都列出來)
 duplicate_mask = df.duplicated(subset=['check_key'], keep=False)
 duplicate_df = df[duplicate_mask & (df['word'] != "")].copy()
 duplicate_df = duplicate_df.sort_values(by=['word', 'category'])
 
 if not duplicate_df.empty:
-    # 1. 新增一個「刪除」欄位，預設為 False (不勾選)
+    # 1. 新增勾選欄
     duplicate_df.insert(0, "刪除", False)
     
-    st.warning(f"🔍 發現 {len(duplicate_df)} 筆完全重複的記錄：")
+    # 2. 定義要顯示的欄位 (隱藏後台欄位)
+    display_cols = ["刪除", "word", "category", "definition", "example", "translation"]
+    
+    st.warning(f"🔍 發現 {len(duplicate_df)} 筆內容重複的單字，請根據例句勾選要刪除的項目：")
 
-    # 2. 使用 data_editor 渲染，並將「刪除」欄設為 Checkbox
+    # 3. 使用 data_editor 渲染
+    # 我們利用 column_order 來隱藏不必要的欄位，並加寬例句欄
     edited_duplicates = st.data_editor(
-        duplicate_df.drop(columns=['check_key']),
+        duplicate_df,
+        column_order=display_cols,
         column_config={
-            "刪除": st.column_config.CheckboxColumn(
-                "刪除?",
-                help="勾選後點擊下方按鈕即可從資料庫移除",
-                default=False,
-            )
+            "刪除": st.column_config.CheckboxColumn("刪除?", default=False),
+            "word": "單字",
+            "category": "分類",
+            "definition": "定義",
+            "example": st.column_config.TextColumn("例句", width="large"),
+            "translation": "翻譯"
         },
-        disabled=["word", "category", "definition", "roots", "breakdown"], # 防止誤改內容，只准勾選
+        disabled=["word", "category", "definition", "example", "translation"], 
         hide_index=True,
         use_container_width=True,
         key="duplicate_editor"
     )
 
-    # 3. 處理刪除邏輯
-    # 找出被勾選的原始索引 (Index)
+    # 4. 刪除邏輯
     to_delete_indices = edited_duplicates[edited_duplicates["刪除"] == True].index
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.info(f"已勾選 {len(to_delete_indices)} 筆資料。")
-    
-    with col2:
-        if st.button("🔥 確認刪除勾選項目", type="primary", use_container_width=True):
-            if len(to_delete_indices) > 0:
-                # 從原始 Session State 中移除這些索引
-                st.session_state.raw_df = st.session_state.raw_df.drop(to_delete_indices)
-                st.success("✅ 已從暫存記憶體中移除！")
-                st.rerun()
-            else:
-                st.error("請先勾選要刪除的項目。")
+    if len(to_delete_indices) > 0:
+        st.error(f"⚠️ 已選取 {len(to_delete_indices)} 筆資料準備移除")
+        if st.button("🔥 執行刪除並更新清單", type="primary"):
+            st.session_state.raw_df = st.session_state.raw_df.drop(to_delete_indices)
+            st.success("已移除勾選項目！")
+            st.rerun()
+    else:
+        st.info("💡 請在上方表格中勾選您不需要的重複項。")
 
-    # 4. 下載最終檔案
+    # 5. 下載
     st.divider()
-    st.subheader("💾 匯出最終資料庫")
-    st.write("清理完畢後，請下載此 CSV 並上傳覆蓋回 Google Sheets。")
-    
     final_csv = st.session_state.raw_df.to_csv(index=False).encode('utf-8-sig')
     st.download_button(
-        label="📥 下載清理後的 CSV (全表)",
-        data=final_csv,
-        file_name="cleaned_etymon_database.csv",
-        mime="text/csv",
+        "📥 下載更新後的完整資料庫 (CSV)",
+        final_csv,
+        "updated_database.csv",
+        "text/csv",
         use_container_width=True
     )
-
 else:
-    st.success("🎉 檢查完畢！目前資料庫非常乾淨，沒有「單字+分類+定義」完全重複的項目。")
+    st.success("🎉 目前資料庫中沒有完全重複的項目。")
 
-# 顯示目前的資料庫總覽 (排除輔助列)
-with st.expander("👀 查看當前資料庫總覽"):
+# 預覽剩餘資料
+with st.expander("查看目前全表資料"):
     st.dataframe(st.session_state.raw_df, use_container_width=True)
