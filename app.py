@@ -25,7 +25,14 @@ if st.button("🔍 開始掃描重複項"):
     df = load_raw_data()
     
     # 2. 定位重複單字 (不分大小寫)
+    df['word'] = df['word'].astype(str).fillna('')
+
+# 2. 現在可以安全地進行字串操作了
     df['word_lower'] = df['word'].str.lower().str.strip()
+
+# 3. (選用) 移除因為轉換空值而產生的無效列
+    df = df[df['word_lower'] != 'nan'] 
+    df = df[df['word_lower'] != '']
     duplicates = df[df.duplicated('word_lower', keep=False)]
     
     if duplicates.empty:
