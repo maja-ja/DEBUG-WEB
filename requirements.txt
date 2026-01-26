@@ -2,4 +2,3 @@ streamlit
 pandas
 gTTS
 st-gsheets-connection
-re
