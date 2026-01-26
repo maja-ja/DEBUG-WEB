@@ -60,7 +60,7 @@ if not duplicate_df.empty:
 
     if len(to_delete_indices) > 0:
         st.error(f"⚠️ 已選取 {len(to_delete_indices)} 筆項目")
-        if st.button("🔥 確定執行刪除", use_container_width=True, type="primary"):
+        if st.button("🔥 確定執行刪除", use_container_width=True):
             st.session_state.raw_df = st.session_state.raw_df.drop(to_delete_indices)
             st.success("刪除成功！")
             st.rerun()
