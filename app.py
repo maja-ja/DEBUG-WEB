@@ -1,60 +1,87 @@
 import streamlit as st
 import pandas as pd
 import re
+from streamlit_gsheets import GSheetsConnection
+
+# --- 頁面設定 ---
+st.set_page_config(page_title="Etymon Admin (Auto-Sync)", layout="wide")
+
+# --- 建立連線 ---
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
-    sheet_id = "1W1ADPyf5gtGdpIEwkxBEsaJ0bksYldf4AugoXnq6Zvg"
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
-    df = pd.read_csv(url)
-    # 強制轉字串並處理
-    df = df.astype(str).replace('nan', '').fillna('')
-    return df
+    # ttl=0 確保每次拿到的都是雲端最新版
+    return conn.read(ttl=0).astype(str).replace('nan', '').fillna('')
 
-st.title("⚡ 強力去重模式")
-st.caption("如果自動清理無效，請使用此模式。我們會強力移除所有隱藏空格與換行。")
-
-if 'raw_df' not in st.session_state:
-    st.session_state.raw_df = load_data()
-
-df = st.session_state.raw_df.copy()
-
-# --- 強力清洗函數 ---
 def heavy_clean(text):
-    # 移除所有換行、分號、空格，並轉小寫
-    text = re.sub(r'\s+', '', text) # 移除所有空白字元 (\n, \t, space)
-    return text.lower().strip()
+    return re.sub(r'\s+', '', str(text)).lower().strip()
 
-# 建立「強力比對金鑰」：只看單字和分類
-df['word_clean'] = df['word'].apply(heavy_clean)
-df['cat_clean'] = df['category'].apply(heavy_clean)
-df['match_key'] = df['word_clean'] + "|" + df['cat_clean']
+# --- 初始化資料 ---
+if 'db' not in st.session_state:
+    st.session_state.db = load_data()
 
-# 找出重複
-duplicates = df[df.duplicated(subset=['match_key'], keep='first')]
+st.title("🛠️ Etymon 終端：自動同步版")
 
-if not duplicates.empty:
-    st.warning(f"🚀 偵測到 {len(duplicates)} 筆隱藏重複項！")
+tab1, tab2, tab3 = st.tabs(["✨ AI 生成與篩選", "🧹 強力自動去重", "💾 雲端同步管理"])
+
+# ==========================================
+# Tab 1: AI 生成與篩選
+# ==========================================
+with tab1:
+    if st.button("🪄 模擬 AI 生成待選單字"):
+        new_items = []
+        for i in range(25):
+            new_items.append({
+                'category': 'General', 'roots': 'temp', 'meaning': 'temp',
+                'word': f'NewWord_{i}', 'breakdown': 'pre+root', 'definition': 'AI生成的定義',
+                'phonetic': '/temp/', 'example': f'Example for {i}',
+                'translation': '範例翻譯', 'selected': True
+            })
+        st.session_state.temp_batch = pd.DataFrame(new_items)
     
-    # 預覽被抓出來的壞傢伙
-    st.dataframe(duplicates[['word', 'category', 'example']], use_container_width=True)
+    if 'temp_batch' in st.session_state:
+        edited_batch = st.data_editor(st.session_state.temp_batch, use_container_width=True)
+        if st.button("🚀 確認加入暫存庫"):
+            final_to_add = edited_batch[edited_batch['selected'] == True].drop(columns=['selected'])
+            st.session_state.db = pd.concat([st.session_state.db, final_to_add], ignore_index=True)
+            st.success("已加入暫存！")
+            del st.session_state.temp_batch
+
+# ==========================================
+# Tab 2: 強力自動去重
+# ==========================================
+with tab2:
+    curr_df = st.session_state.db.copy()
+    curr_df['match_key'] = curr_df['word'].apply(heavy_clean) + "|" + curr_df['category'].apply(heavy_clean)
+    duplicates = curr_df[curr_df.duplicated(subset=['match_key'], keep='first')]
     
-    if st.button("🔥 執行強力清理", type="primary", use_container_width=True):
-        # 只保留第一筆
-        df_cleaned = df.drop_duplicates(subset=['match_key'], keep='first')
-        # 移除輔助欄位
-        df_cleaned = df_cleaned.drop(columns=['word_clean', 'cat_clean', 'match_key'])
-        
-        st.session_state.raw_df = df_cleaned
-        st.success(f"清理完畢！已移除 {len(duplicates)} 筆。")
+    st.metric("當前重複項", len(duplicates))
+    
+    if not duplicates.empty:
+        if st.button("🔥 執行強力去重 (記憶體)", use_container_width=True):
+            st.session_state.db = curr_df.drop_duplicates(subset=['match_key'], keep='first').drop(columns=['match_key'])
+            st.success("去重完成！")
+            st.rerun()
+    else:
+        st.success("✅ 目前無重複內容。")
+
+# ==========================================
+# Tab 3: 雲端同步管理 (最重要)
+# ==========================================
+with tab3:
+    st.write("### 檢查變更")
+    st.dataframe(st.session_state.db, use_container_width=True)
+    
+    if st.button("☁️ 將目前所有更改「同步回雲端」", type="primary", use_container_width=True):
+        with st.spinner("正在寫入 Google Sheets..."):
+            try:
+                # 執行自動更新
+                conn.update(data=st.session_state.db)
+                st.balloons()
+                st.success("🎉 同步成功！雲端資料庫已是最新狀態。")
+            except Exception as e:
+                st.error(f"寫入失敗。請檢查 Secrets 設定是否正確。錯誤：{e}")
+
+    if st.button("🔄 放棄本地更改，重新從雲端抓取"):
+        del st.session_state.db
         st.rerun()
-else:
-    st.info("💡 連強力比對都找不到重複，這代表這 1642 筆的「單字+分類」組合都是獨一無二的。")
-    st.write("如果你還是覺得有重複，可能是因為同一個單字被分到了『不同的 Category』。")
-
-# --- 檢索測試 ---
-st.divider()
-search = st.text_input("🔍 輸入一個你覺得重複的單字來手動檢查：")
-if search:
-    test = df[df['word'].str.contains(search, case=False)]
-    st.write(f"搜尋結果：找到 {len(test)} 筆")
-    st.table(test[['word', 'category', 'definition']])
