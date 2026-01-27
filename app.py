@@ -2,24 +2,28 @@ import streamlit as st
 import pandas as pd
 from google import genai
 import re
+import time
 from streamlit_gsheets import GSheetsConnection
 
 # --- 0. 頁面配置 ---
-st.set_page_config(page_title="Etymon AI Admin 2026", layout="wide")
+st.set_page_config(page_title="Etymon AI Admin 2026 (20-Col Edition)", layout="wide")
 
-# --- 1. 初始化新版 Gemini SDK ---
+# --- 1. 核心欄位與配置 ---
+COL_NAMES_20 = [
+    'category', 'roots', 'meaning', 'word', 'breakdown', 
+    'definition', 'phonetic', 'example', 'translation', 'native_vibe',
+    'synonym_nuance', 'visual_prompt', 'social_status', 'emotional_tone', 'street_usage',
+    'collocation', 'etymon_story', 'usage_warning', 'memory_hook', 'audio_tag'
+]
+
+# --- 2. 初始化 Gemini ---
 try:
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     MODEL_ID = "gemini-2.5-flash" 
 except Exception as e:
-    st.error(f"AI 初始化失敗，請檢查 Secret: {e}")
+    st.error(f"AI 初始化失敗: {e}")
 
-# --- 2. 輔助函數 ---
-def heavy_clean(text):
-    if not text: return ""
-    return re.sub(r'\s+', '', str(text)).lower().strip()
-
-# --- 3. 雲端連線與資料初始化 ---
+# --- 3. 雲端連線 ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 NEW_DB_URL = "https://docs.google.com/spreadsheets/d/1W1ADPyf5gtGdpIEwkxBEsaJ0bksYldf4AugoXnq6Zvg/edit?gid=204425767#gid=204425767"
 
@@ -27,139 +31,100 @@ if 'db' not in st.session_state:
     try:
         df = conn.read(spreadsheet=NEW_DB_URL, ttl=0)
         df.columns = [str(c).strip().lower() for c in df.columns]
+        # 確保所有 20 欄都存在於 dataframe 中
+        for col in COL_NAMES_20:
+            if col not in df.columns:
+                df[col] = ""
         st.session_state.db = df.dropna(subset=['word']).reset_index(drop=True)
-    except:
-        st.session_state.db = pd.DataFrame(columns=['category', 'roots', 'meaning', 'word', 'breakdown', 'definition', 'phonetic', 'example', 'translation',' native_vibe'])
+    except Exception as e:
+        st.error(f"讀取資料庫失敗: {e}")
+        st.session_state.db = pd.DataFrame(columns=COL_NAMES_20)
 
-# --- 4. 側邊欄導航系統 (解決跳頁問題的核心) ---
-with st.sidebar:
-    st.title("🚀 Etymon AI 終端")
-    st.markdown("---")
-    # 使用 radio 作為導航，key 確保狀態持久化
-    menu = st.radio(
-        "功能選單",
-        ["✨ 批次生成", "🧹 庫管理", "☁️ 雲端同步", "🔄 批次重整", "🧠 語感校驗"],
-        key="main_nav"
-    )
-    st.markdown("---")
-    st.metric("當前資料庫筆數", len(st.session_state.db))
-    if st.button("♻️ 強制重新讀取雲端"):
-        del st.session_state.db
-        st.rerun()
+# --- 4. 介面設計 ---
+st.title("🧩 Etymon 語感百科：20 欄位全自動管理端")
 
-# --- 5. 各頁面邏輯 ---
+menu = st.sidebar.selectbox("功能選單", ["📊 資料總覽", "🏭 協作量產 (20欄)", "☁️ 雲端同步"])
 
-# --- 頁面 A: AI 生成 ---
-if menu == "✨ 批次生成":
-    st.header("✨ 批次單字生成")
-    topic = st.text_input("輸入主題 (例如：高中必備 re- 字首)：", placeholder="請輸入主題...")
-    num_count = st.slider("選擇生成數量", 20, 100)
+# --- 功能：資料總覽 ---
+if menu == "📊 資料總覽":
+    st.write(f"當前資料筆數：{len(st.session_state.db)}")
+    st.dataframe(st.session_state.db)
+
+# --- 功能：協作量產 (重點升級) ---
+elif menu == "🏭 協作量產 (20欄)":
+    st.header("🛠 多人協作量產模式")
+    st.info("請同學分配好各自的區間（例如：A 處理 0-100，B 處理 101-200），避免同時存取。")
     
-    if st.button(f"""🪄 使用 {MODEL_ID} 開始生成"""):
-        with st.spinner("AI 正在思考中..."):
-            try:
-                prompt = f"""請將以下單字重新整理成 10 欄位 CSV 格式 (| 分隔格式：
-category|roots|meaning|word|breakdown|definition|phonetic|example|translation|native_vibe
-(不要標題，不要說明，category｜meaning｜definition｜translation 均為繁體中文，
-translation 是 example 的翻譯。native_vibe 內容請保留原意。)"""
-                response = client.models.generate_content(model=MODEL_ID, contents=prompt)
-                lines = [l.strip().split('|') for l in response.text.strip().split('\n') if len(l.split('|')) == 9]
-                
-                if lines:
-                    st.session_state.ai_draft = pd.DataFrame(lines, columns=st.session_state.db.columns)
-                    st.success(f"成功生成 {len(lines)} 筆資料！")
-                else:
-                    st.error("格式不符，請重試。")
-            except Exception as e:
-                st.error(f"錯誤：{e}")
+    col1, col2 = st.columns(2)
+    with col1:
+        start_idx = st.number_input("起始索引 (Index Start)", value=0, min_value=0, step=10)
+    with col2:
+        end_idx = st.number_input("結束索引 (Index End)", value=min(start_idx + 10, len(st.session_state.db)), min_value=0)
 
-    if 'ai_draft' in st.session_state:
-        st.divider()
-        st.markdown("### 📝 預覽與匯入")
-        draft_df = st.session_state.ai_draft.copy()
-        if "核可" not in draft_df.columns: draft_df.insert(0, "核可", True)
-        edited_df = st.data_editor(draft_df, key="vocal_editor", hide_index=True)
-        
-        if st.button("📥 匯入選中單字到暫存庫", use_container_width=True):
-            to_add = edited_df[edited_df['核可'] == True].drop(columns=['核可'])
-            st.session_state.db = pd.concat([st.session_state.db, to_add], ignore_index=True)
-            del st.session_state.ai_draft
-            st.success("匯入成功！")
-            st.rerun()
-# --- 頁面 B: 庫管理 (修正變數報錯版) ---
-elif menu == "🧹 庫管理":
-    st.header("🧹 資料庫健康檢查")
-    
-    if not st.session_state.db.empty:
-        # 1. 務必先計算 duplicates，再進入 if 判斷
-        temp_df = st.session_state.db.copy()
-        
-        # 建立去重用 key
-        temp_df['match_key'] = (
-            temp_df['word'].apply(heavy_clean) + "|" + 
-            temp_df['category'].apply(heavy_clean)
-        )
-        
-        # 找出重複項
-        duplicates = temp_df[temp_df.duplicated(subset=['match_key'], keep='first')]
-        
-        # 2. 顯示統計數據
-        col_m1, col_m2 = st.columns(2)
-        col_m1.metric("總筆數", len(temp_df))
-        col_m2.metric("重複項目", len(duplicates))
+    target_words = st.session_state.db.iloc[start_idx:end_idx]
+    st.write("📍 待處理單字：", ", ".join(target_words['word'].tolist()))
 
-        # 3. 處理重複項的 UI
-        if not duplicates.empty:
-            with st.expander("查看重複的項目內容"):
-                st.write(duplicates[['word', 'category', 'definition']])
-            
-            if st.button("🔥 立即移除重複並同步至雲端", use_container_width=True):
-                # 執行去重
-                cleaned_df = temp_df.drop_duplicates(subset=['match_key'], keep='first').drop(columns=['match_key'])
-                st.session_state.db = cleaned_df
-                
-                # 同步到 Google Sheets
-                with st.spinner("同步至雲端中..."):
-                    conn.update(spreadsheet=NEW_DB_URL, data=st.session_state.db)
-                st.success("重複項已移除並同步雲端！")
-                st.rerun()
+    if st.button("🚀 執行 AI 深度消化 (20 欄)"):
+        if target_words.empty:
+            st.warning("請選擇有效的索引區間")
         else:
-            st.success("✨ 資料庫狀態良好，無重複項。")
-
-        st.divider()
-        st.subheader("🗑️ 手動編輯庫存")
-        st.info("💡 刪除行後，請務必點擊下方的『同步到雲端』按鈕。")
-
-        # 4. 手動編輯區
-        edited_db = st.data_editor(
-            st.session_state.db, 
-            key="main_db_editor_v3", 
-            num_rows="dynamic",
-            use_container_width=True
-        )
-        
-        if st.button("💾 保存編輯並同步到雲端", type="primary", use_container_width=True):
-            st.session_state.db = edited_db
-            with st.spinner("正在將手動修改寫入雲端..."):
-                conn.update(spreadsheet=NEW_DB_URL, data=st.session_state.db)
-            st.success("修改已成功保存至 Google Sheets！")
-            st.rerun()
+            progress_bar = st.progress(0)
+            words_string = ", ".join(target_words['word'].tolist())
             
-    else:
-        st.info("資料庫目前是空的，請先去『✨ 批次生成』。")
+            # 終極 Prompt
+            mass_prompt = f"""
+            你是一位擁有極致語意洞察力的英語專家。請針對以下單字，產出 20 個欄位的詳細資料。
+            規則：
+            1. 每行一筆，欄位間用 | 分隔，嚴格遵守順序。
+            2. 順序：category|roots|meaning|word|breakdown|definition|phonetic|example|translation|native_vibe|synonym_nuance|visual_prompt|social_status|emotional_tone|street_usage|collocation|etymon_story|usage_warning|memory_hook|audio_tag
+            3. 內容要求：
+               - native_vibe: 描述氣味、顏色、溫度（如：20度C的冷冽）。
+               - street_usage: 極度生活化且幽默諷刺。
+               - memory_hook: 荒謬且深刻。
+            單字：{words_string}
+            """
+            
+            try:
+                with st.spinner("AI 正在織網中..."):
+                    response = client.models.generate_content(model=MODEL_ID, contents=mass_prompt)
+                    lines = response.text.strip().split('\n')
+                
+                success_count = 0
+                for line in lines:
+                    parts = [p.strip() for p in line.split('|')]
+                    if len(parts) >= 4:  # 至少要有單字本人
+                        # 找尋 word 欄位匹配 (在第 4 欄，Index 3)
+                        w_key = parts[3].lower()
+                        row_idx = st.session_state.db[st.session_state.db['word'].str.lower() == w_key].index
+                        
+                        if not row_idx.empty:
+                            # 填入 20 欄，若 AI 輸出不足則補空
+                            for i, col in enumerate(COL_NAMES_20):
+                                if i < len(parts):
+                                    st.session_state.db.loc[row_idx, col] = parts[i]
+                            success_count += 1
+                
+                st.success(f"✅ 完成 {success_count} 筆單字的深度重整！")
+                st.balloons()
+                st.dataframe(st.session_state.db.iloc[start_idx:end_idx])
+                st.info("💡 提醒：處理完後請至『☁️ 雲端同步』寫回 Google Sheet。")
+                
+            except Exception as e:
+                st.error(f"AI 產出發生錯誤: {e}")
 
-# --- 頁面 C: 雲端同步 ---
+# --- 功能：雲端同步 ---
 elif menu == "☁️ 雲端同步":
-    st.header("☁️ 同步至 Google Sheets")
-    st.warning("提醒：這會覆蓋雲端試算表上的所有舊資料。")
-    st.dataframe(st.session_state.db, use_container_width=True)
+    st.header("💾 同步至 Google Sheets")
+    st.warning("同步將覆蓋雲端現有的 {len(st.session_state.db)} 筆資料，請確認欄位數為 20 欄。")
     
-    if st.button("💾 執行寫入雲端", type="primary", use_container_width=True):
-        with st.spinner("同步中..."):
-            conn.update(spreadsheet=NEW_DB_URL, data=st.session_state.db)
-            st.success("🎉 同步成功！")
-            st.balloons()
-
+    if st.button("確認同步寫回雲端"):
+        try:
+            with st.spinner("正在同步..."):
+                # 這裡會根據 st.session_state.db 的欄位順序寫回
+                conn.update(spreadsheet=NEW_DB_URL, data=st.session_state.db)
+                st.success("✅ 雲端資料庫已更新！")
+        except Exception as e:
+            st.error(f"同步失敗: {e}")
 # --- 頁面 D: 批次重整 ---
 elif menu == "🔄 批次重整":
     st.header("🔄 資料重整流水線")
@@ -280,15 +245,20 @@ elif menu == "🏭 語感量產":
             
             with st.spinner(f"正在為 {len(batch_words)} 個單字注入靈魂..."):
                 mass_prompt = f"""
-                你是語言直覺大師。請為以下單字提供『母語人士語感 (Native Vibe)』。
-                要求：
-                1. 語感必須包含：視覺/聽覺意象、社會階層感、或一個毒舌的生活化造句。
-                2. 格式：單字 | 語感內容 (每個單字一行)
-                3. 語言：繁體中文，幽默精闢。
-                4. 請讓語感分析充滿驚喜感。開頭可以先否定課本定義，例如：『雖然字典說它是精密的，但在紐約華爾街，這聽起來更像是...』，讓解鎖的人覺得賺到了。
-                
-                單字清單：{words_string}
-                """
+你是一位擁有極致語感、毒舌且幽默的英語語言學家。請針對以下單字清單，產出 20 欄位的完整描述。
+格式要求：
+1. 每一行代表一個單字。
+2. 每個欄位之間使用 "|" 分隔。
+3. 20 個欄位的標頭順序為：
+   category | roots | meaning | word | breakdown | definition | phonetic | example | translation | native_vibe | synonym_nuance | visual_prompt | social_status | emotional_tone | street_usage | collocation | etymon_story | usage_warning | memory_hook | audio_tag
+
+風格指引：
+- native_vibe: 要有氣味、顏色、溫度與職業感。
+- street_usage: 產出一個讓人噴飯、帶點諷刺的生活化情境。
+- memory_hook: 越怪誕越好。
+
+單字清單：{words_string}
+"""
                 
                 try:
                     response = client.models.generate_content(model=MODEL_ID, contents=mass_prompt)
