@@ -55,7 +55,7 @@ if menu == "✨ 批次生成":
     topic = st.text_input("輸入主題 (例如：高中必備 re- 字首)：", placeholder="請輸入主題...")
     num_count = st.slider("選擇生成數量", 20, 100)
     
-    if st.button(f"🪄 使用 {MODEL_ID} 開始生成"):
+    if st.button(f"""🪄 使用 {MODEL_ID} 開始生成"""):
         with st.spinner("AI 正在思考中..."):
             try:
                 prompt = f"""請生成 {num_count} 個關於「{topic}」的英文單字。格式：category|roots|meaning|word|breakdown|definition|phonetic|example|translation|native_vibe(不要標題，不要說明，category｜meaning｜definition｜translation，都是繁體中文，而且translation是example的翻譯。native_vibe可以以以下格式輸出：
