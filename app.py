@@ -29,7 +29,7 @@ if 'db' not in st.session_state:
         df.columns = [str(c).strip().lower() for c in df.columns]
         st.session_state.db = df.dropna(subset=['word']).reset_index(drop=True)
     except:
-        st.session_state.db = pd.DataFrame(columns=['category', 'roots', 'meaning', 'word', 'breakdown', 'definition', 'phonetic', 'example', 'translation','native_vibe'])
+        st.session_state.db = pd.DataFrame(columns=['category', 'roots', 'meaning', 'word', 'breakdown', 'definition', 'phonetic', 'example', 'translation',' native_vibe'])
 
 # --- 4. 側邊欄導航系統 (解決跳頁問題的核心) ---
 with st.sidebar:
@@ -53,7 +53,7 @@ with st.sidebar:
 if menu == "✨ 批次生成":
     st.header("✨ 批次單字生成")
     topic = st.text_input("輸入主題 (例如：高中必備 re- 字首)：", placeholder="請輸入主題...")
-    num_count = st.slider("選擇生成數量", 20, 100, 30)
+    num_count = st.slider("選擇生成數量", 20, 100)
     
     if st.button(f"🪄 使用 {MODEL_ID} 開始生成"):
         with st.spinner("AI 正在思考中..."):
@@ -67,7 +67,7 @@ if menu == "✨ 批次生成":
                 4. 請讓語感分析充滿驚喜感。開頭可以先否定課本定義，例如：『雖然字典說它是精密的，但在紐約華爾街，這聽起來更像是...』，讓解鎖的人覺得賺到了。)"""
                 
                 response = client.models.generate_content(model=MODEL_ID, contents=prompt)
-                lines = [l.strip().split('|') for l in response.text.strip().split('\n') if len(l.split('|')) == 10]
+                lines = [l.strip().split('|') for l in response.text.strip().split('\n') if len(l.split('|')) == 9]
                 
                 if lines:
                     st.session_state.ai_draft = pd.DataFrame(lines, columns=st.session_state.db.columns)
