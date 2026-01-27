@@ -73,16 +73,27 @@ elif menu == "🏭 協作量產 (20欄)":
             
             # 終極 Prompt
             mass_prompt = f"""
-            你是一位擁有極致語意洞察力的英語專家。請針對以下單字，產出 20 個欄位的詳細資料。
-            規則：
-            1. 每行一筆，欄位間用 | 分隔，嚴格遵守順序。
-            2. 順序：category|roots|meaning|word|breakdown|definition|phonetic|example|translation|native_vibe|synonym_nuance|visual_prompt|social_status|emotional_tone|street_usage|collocation|etymon_story|usage_warning|memory_hook|audio_tag
-            3. 內容要求：
-               - native_vibe: 描述氣味、顏色、溫度（如：20度C的冷冽）。
-               - street_usage: 極度生活化且幽默諷刺。
-               - memory_hook: 荒謬且深刻。
-            單字：{words_string}
-            """
+你現在是一位精通字源學、語言心理學且語氣幽默的英語專家。
+請針對以下單字進行「百科級」的解構，並嚴格遵守格式規範：
+
+### 1. 輸出格式
+每個單字請輸出為一行，欄位間用「|」隔開：
+單字 | category | roots | meaning | breakdown | definition | example | translation
+
+### 2. 欄位細節要求
+- category: 該單字所屬的學科或語境 (中文)。
+- roots: 核心字根。
+- meaning: 字根的中文含義。
+- breakdown: 【重要】中英混雜格式。範例：'geno (基因) + type (型)' 或 'optim (優) + ization (行為)'。
+- definition: 精簡的中文核心定義。
+- example: 一句道地的英文例句。
+- translation: 例句的中文翻譯 (請充滿生活感)。
+
+### 3. 範例 (請模仿此風格)
+genotype | 生物學 | gen | 產生 | geno (基因) + type (型) | 基因型 | Genotype vs Phenotype. | 基因型與表型的對決。
+
+單字清單：{words_string}
+"""
             
             try:
                 with st.spinner("AI 正在織網中..."):
