@@ -58,14 +58,10 @@ if menu == "✨ 批次生成":
     if st.button(f"""🪄 使用 {MODEL_ID} 開始生成"""):
         with st.spinner("AI 正在思考中..."):
             try:
-                prompt = f"""請生成 {num_count} 個關於「{topic}」的英文單字。格式：category|roots|meaning|word|breakdown|definition|phonetic|example|translation|native_vibe(不要標題，不要說明，category｜meaning｜definition｜translation，都是繁體中文，而且translation是example的翻譯。native_vibe可以以以下格式輸出：
-                你是語言直覺大師。請為以下單字提供『母語人士語感 (Native Vibe)』。
-                要求：
-                1. 語感必須包含：視覺/聽覺意象、社會階層感、或一個毒舌的生活化造句。
-                2. 格式：單字 | 語感內容 (每個單字一行)
-                3. 語言：繁體中文，幽默精闢。
-                4. 請讓語感分析充滿驚喜感。開頭可以先否定課本定義，例如：『雖然字典說它是精密的，但在紐約華爾街，這聽起來更像是...』，讓解鎖的人覺得賺到了。)"""
-                
+                prompt = f"""請將以下單字重新整理成 10 欄位 CSV 格式 (| 分隔格式：
+category|roots|meaning|word|breakdown|definition|phonetic|example|translation|native_vibe
+(不要標題，不要說明，category｜meaning｜definition｜translation 均為繁體中文，
+translation 是 example 的翻譯。native_vibe 內容請保留原意。)"""
                 response = client.models.generate_content(model=MODEL_ID, contents=prompt)
                 lines = [l.strip().split('|') for l in response.text.strip().split('\n') if len(l.split('|')) == 9]
                 
