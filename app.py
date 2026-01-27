@@ -29,7 +29,7 @@ if 'db' not in st.session_state:
         df.columns = [str(c).strip().lower() for c in df.columns]
         st.session_state.db = df.dropna(subset=['word']).reset_index(drop=True)
     except:
-        st.session_state.db = pd.DataFrame(columns=['category', 'roots', 'meaning', 'word', 'breakdown', 'definition', 'phonetic', 'example', 'translation'])
+        st.session_state.db = pd.DataFrame(columns=['category', 'roots', 'meaning', 'word', 'breakdown', 'definition', 'phonetic', 'example', 'translation','native_vibe'])
 
 # --- 4. 側邊欄導航系統 (解決跳頁問題的核心) ---
 with st.sidebar:
@@ -58,9 +58,16 @@ if menu == "✨ 批次生成":
     if st.button(f"🪄 使用 {MODEL_ID} 開始生成"):
         with st.spinner("AI 正在思考中..."):
             try:
-                prompt = f"""請生成 {num_count} 個關於「{topic}」的英文單字。格式：category|roots|meaning|word|breakdown|definition|phonetic|example|translation (不要標題，不要說明，category｜meaning｜definition｜translation，都是繁體中文，而且translation是example的翻譯)"""
+                prompt = f"""請生成 {num_count} 個關於「{topic}」的英文單字。格式：category|roots|meaning|word|breakdown|definition|phonetic|example|translation|native_vibe(不要標題，不要說明，category｜meaning｜definition｜translation，都是繁體中文，而且translation是example的翻譯。native_vibe可以以以下格式輸出：
+                你是語言直覺大師。請為以下單字提供『母語人士語感 (Native Vibe)』。
+                要求：
+                1. 語感必須包含：視覺/聽覺意象、社會階層感、或一個毒舌的生活化造句。
+                2. 格式：單字 | 語感內容 (每個單字一行)
+                3. 語言：繁體中文，幽默精闢。
+                4. 請讓語感分析充滿驚喜感。開頭可以先否定課本定義，例如：『雖然字典說它是精密的，但在紐約華爾街，這聽起來更像是...』，讓解鎖的人覺得賺到了。)"""
+                
                 response = client.models.generate_content(model=MODEL_ID, contents=prompt)
-                lines = [l.strip().split('|') for l in response.text.strip().split('\n') if len(l.split('|')) == 9]
+                lines = [l.strip().split('|') for l in response.text.strip().split('\n') if len(l.split('|')) == 10]
                 
                 if lines:
                     st.session_state.ai_draft = pd.DataFrame(lines, columns=st.session_state.db.columns)
@@ -83,7 +90,6 @@ if menu == "✨ 批次生成":
             del st.session_state.ai_draft
             st.success("匯入成功！")
             st.rerun()
-# --- 頁面 B: 庫管理 (自動同步版) ---
 # --- 頁面 B: 庫管理 (修正變數報錯版) ---
 elif menu == "🧹 庫管理":
     st.header("🧹 資料庫健康檢查")
@@ -162,7 +168,7 @@ elif menu == "☁️ 雲端同步":
 elif menu == "🔄 批次重整":
     st.header("🔄 資料重整流水線")
     if not st.session_state.db.empty:
-        batch_size = 100
+        batch_size = 10
         total_records = len(st.session_state.db)
         total_batches = (total_records // batch_size) + (1 if total_records % batch_size > 0 else 0)
         
@@ -177,7 +183,8 @@ elif menu == "🔄 批次重整":
             with st.spinner("AI 處理中..."):
                 try:
                     word_list = ", ".join(current_batch['word'].tolist())
-                    refactor_prompt = f"請將以下單字重新整理成 9 欄位 CSV 格式 (| 分隔)，確保內容為繁體中文：{word_list}"
+                    refactor_prompt = f"請將以下單字重新整理成 10 欄位 CSV 格式 (| 分隔格式：category|roots|meaning|word|breakdown|definition|phonetic|example|translation|native_vibe(不要標題，不要說明，category｜meaning｜definition｜translation，都是繁體中文，而且translation是example的翻譯。native_vibe可以無視
+)，確保內容為繁體中文：{word_list}"
                     response = client.models.generate_content(model=MODEL_ID, contents=refactor_prompt)
                     lines = [l.strip().split('|') for l in response.text.strip().split('\n') if len(l.split('|')) == 9]
                     if lines:
