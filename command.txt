@@ -1,0 +1,4 @@
+cd desktop/asdfg
+pip3 install -r requirements.txt
+localhost:8501
+streamlit run app.py
