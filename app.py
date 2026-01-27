@@ -179,8 +179,8 @@ elif menu == "🔄 批次重整":
             with st.spinner("AI 處理中..."):
                 try:
                     word_list = ", ".join(current_batch['word'].tolist())
-                    refactor_prompt = f"請將以下單字重新整理成 10 欄位 CSV 格式 (| 分隔格式：category|roots|meaning|word|breakdown|definition|phonetic|example|translation|native_vibe(不要標題，不要說明，category｜meaning｜definition｜translation，都是繁體中文，而且translation是example的翻譯。native_vibe可以無視
-)，確保內容為繁體中文：{word_list}"
+                    refactor_prompt = f"""請將以下單字重新整理成 10 欄位 CSV 格式 (| 分隔格式：category|roots|meaning|word|breakdown|definition|phonetic|example|translation|native_vibe(不要標題，不要說明，category｜meaning｜definition｜translation，都是繁體中文，而且translation是example的翻譯。native_vibe可以無視
+)，確保內容為繁體中文：{word_list}"""
                     response = client.models.generate_content(model=MODEL_ID, contents=refactor_prompt)
                     lines = [l.strip().split('|') for l in response.text.strip().split('\n') if len(l.split('|')) == 9]
                     if lines:
