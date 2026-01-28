@@ -126,7 +126,7 @@ genotype | 生物學 | gen | 產生 | geno (基因) + type (型) | 基因型 | G
 # --- 功能：雲端同步 ---
 elif menu == "☁️ 雲端同步":
     st.header("💾 同步至 Google Sheets")
-    st.warning("同步將覆蓋雲端現有的 {len(st.session_state.db)} 筆資料，請確認欄位數為 20 欄。")
+    st.warning("同步將覆蓋雲端現有的",f"{len(st.session_state.db)}", " 筆資料，請確認欄位數為 20 欄。")
     
     if st.button("確認同步寫回雲端"):
         try:
