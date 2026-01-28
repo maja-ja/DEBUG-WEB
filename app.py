@@ -126,14 +126,19 @@ genotype | 生物學 | gen | 產生 | geno (基因) + type (型) | 基因型 | G
 # --- 功能：雲端同步 ---
 elif menu == "☁️ 雲端同步":
     st.header("💾 同步至 Google Sheets")
-    st.warning("同步將覆蓋雲端現有的",f"{len(st.session_state.db)}", " 筆資料，請確認欄位數為 20 欄。")
+    
+    # 修正點：將多個參數合併為一個 f-string
+    st.warning(f"同步將覆蓋雲端現有的 {len(st.session_state.db)} 筆資料，請確認欄位數為 20 欄。")
     
     if st.button("確認同步寫回雲端"):
         try:
             with st.spinner("正在同步..."):
-                # 這裡會根據 st.session_state.db 的欄位順序寫回
-                conn.update(spreadsheet=NEW_DB_URL, data=st.session_state.db)
-                st.success("✅ 雲端資料庫已更新！")
+                # 確保 st.session_state.db 存在且不為 None
+                if 'db' in st.session_state:
+                    conn.update(spreadsheet=NEW_DB_URL, data=st.session_state.db)
+                    st.success("✅ 雲端資料庫已更新！")
+                else:
+                    st.error("暫存資料庫不存在，請先讀取資料。")
         except Exception as e:
             st.error(f"同步失敗: {e}")
 # --- 頁面 D: 批次重整 ---
