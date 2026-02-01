@@ -1,68 +1,120 @@
-# --- 2. 核心量產指令 (1號生產者 + 2號校對者邏輯) ---
-def generate_kadowsella_data(words_list, target_age):
-    # 這裡確保使用正確的 Model ID
-    mass_prompt = f"""
-    你現在是 Kadowsella 開源計畫的執行專家。
-    請針對單字清單：{", ".join(words_list)}
-    產出適合「{target_age} 歲」理解的專業內容。
-    
-    格式規範（極度重要）：
-    1. 輸出必須純粹是資料行，不准有 Markdown 標題、不准有說明文字、不准有開頭結尾。
-    2. 每一行代表一個單字，欄位間嚴格使用「|」隔開。
-    3. 欄位順序必須是：age|word|category|prefix|root|suffix|phonetic|visual_vibe|field_app
-    4. 語言：必須使用繁體中文。
-    5. 解釋風格：
-       - visual_vibe: 給 6-10 歲孩子的具體畫面（例如：API 像服務生送菜）。
-       - field_app: 解釋在專業領域（如資工、醫學）的具體用途。
-    """
-    
-    try:
-        # 使用你定義過的 client 物件
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=mass_prompt)
-        return response.text
-    except Exception as e:
-        return f"ERROR|{e}"
+import streamlit as st
+import pandas as pd
+from google import genai
+from streamlit_gsheets import GSheetsConnection
 
-# --- 3. 介面：協作量產區 ---
-if menu == "🏭 9欄位量產":
-    st.header("🛠 Kadowsella 全齡量產模式 (9欄位)")
+# ==========================================
+# 1. 核心配置與欄位定義 (黃金 9 欄)
+# ==========================================
+st.set_page_config(page_title="Kadowsella Admin v1.0", layout="wide")
+
+COL_NAMES_9 = [
+    'age', 'word', 'category', 'prefix', 'root', 
+    'suffix', 'phonetic', 'visual_vibe', 'field_app'
+]
+
+# --- 初始化 Gemini ---
+try:
+    client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+    MODEL_ID = "gemini-2.0-flash" 
+except Exception as e:
+    st.error(f"AI 初始化失敗: {e}")
+
+# --- 雲端連線 ---
+conn = st.connection("gsheets", type=GSheetsConnection)
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1W1ADPyf5gtGdpIEwkxBEsaJ0bksYldf4AugoXnq6Zvg/edit?gid=751586037#gid=751586037"
+
+# ==========================================
+# 2. 側邊欄選單 (定義 menu 變數)
+# ==========================================
+st.sidebar.title("🧩 Kadowsella Protocol")
+menu = st.sidebar.selectbox("功能選單", ["📊 資料總覽", "🏭 9欄位量產", "☁️ 雲端同步"])
+
+# ==========================================
+# 3. 核心功能邏輯
+# ==========================================
+
+# --- 功能 A: 資料總覽 ---
+if menu == "📊 資料總覽":
+    st.title("📊 雲端倉庫總覽")
+    try:
+        df = conn.read(spreadsheet=SHEET_URL, ttl=0)
+        # 強制對齊前 9 欄
+        df = df.iloc[:, :9]
+        df.columns = COL_NAMES_9
+        st.session_state.db = df
+        st.dataframe(df, use_container_width=True)
+        st.write(f"當前庫存：{len(df)} 筆資料")
+    except Exception as e:
+        st.error(f"讀取失敗: {e}")
+
+# --- 功能 B: 9 欄位量產 ---
+elif menu == "🏭 9欄位量產":
+    st.title("🛠 Kadowsella 全齡量產模式")
     
-    target_age = st.selectbox("目標年齡層 (x 歲)", [i for i in range(0, 101, 5)], index=2)
-    input_words = st.text_area("請輸入單字 (用逗號隔開)", "Database, Cache, Firewall")
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        target_age = st.selectbox("目標年齡區間 (x歲)", [i for i in range(0, 101, 5)], index=2)
+        input_words = st.text_area("輸入單字 (逗號隔開)", "Algorithm, Neural Network, API")
     
-    if st.button("🚀 第一、二、三個人開始工作！"):
-        # 1. 清理輸入資料
+    if st.button("🚀 啟動 Agent 生產線"):
         words = [w.strip() for w in input_words.split(",") if w.strip()]
         
-        if not words:
-            st.warning("請輸入至少一個單字。")
-        else:
-            with st.spinner(f"正在織網中... 產出 {target_age} 歲的解釋"):
-                raw_result = generate_kadowsella_data(words, target_age)
+        with st.spinner(f"正在為 {target_age} 歲打造專屬解釋..."):
+            prompt = f"""
+            你現在是 Kadowsella 開源計畫的專家。請針對單字清單：{words}
+            產出適合「{target_age} 歲」孩子理解的 9 欄位內容。
+            
+            格式要求：
+            1. 純文字輸出，欄位間用「|」隔開。
+            2. 順序：age|word|category|prefix|root|suffix|phonetic|visual_vibe|field_app
+            3. visual_vibe 必須有強烈畫面感（適合 6-10 歲）。
+            4. 語言：繁體中文。
+            """
+            
+            response = client.models.generate_content(model=MODEL_ID, contents=prompt)
+            lines = response.text.strip().split('\n')
+            
+            new_rows = []
+            for line in lines:
+                parts = [p.strip() for p in line.split('|')]
+                if len(parts) == 9:
+                    new_rows.append(parts)
+            
+            if new_rows:
+                new_df = pd.DataFrame(new_rows, columns=COL_NAMES_9)
+                st.session_state.temp_batch = new_df
+                st.success(f"✅ 已產出 {len(new_df)} 筆暫存資料！")
+                st.data_editor(new_df)
+            else:
+                st.error("產出格式異常，請重試。")
+
+# --- 功能 C: 雲端同步 ---
+elif menu == "☁️ 雲端同步":
+    st.title("💾 同步至 Google Sheets")
+    
+    if 'temp_batch' in st.session_state:
+        st.write("待上傳的新資料：")
+        st.dataframe(st.session_state.temp_batch)
+        
+        if st.button("確認寫回雲端倉庫"):
+            try:
+                # 讀取舊資料並合併
+                old_df = conn.read(spreadsheet=SHEET_URL, ttl=0).iloc[:, :9]
+                old_df.columns = COL_NAMES_9
+                updated_df = pd.concat([old_df, st.session_state.temp_batch], ignore_index=True)
                 
-                # 2. 精準解析 AI 回傳
-                new_rows = []
-                # 這裡增加檢查過濾，避免空行與錯誤
-                for line in raw_result.strip().split('\n'):
-                    if "|" in line:
-                        parts = [p.strip() for p in line.split('|')]
-                        if len(parts) == 9:
-                            new_rows.append(parts)
-                
-                if new_rows:
-                    new_df = pd.DataFrame(new_rows, columns=COL_NAMES_9)
-                    st.success(f"🎉 產出成功！共 {len(new_df)} 筆。")
-                    
-                    # 3. 提供編輯器（讓你在存檔前做最後微調）
-                    edited_df = st.data_editor(new_df, use_container_width=True)
-                    
-                    # 暫存在 session_state
-                    if 'temp_db' not in st.session_state:
-                        st.session_state.temp_db = edited_df
-                    else:
-                        st.session_state.temp_db = pd.concat([st.session_state.temp_db, edited_df]).drop_duplicates(subset=['word', 'age'])
-                    
-                    st.info("💡 資料已進入待傳送緩存。請前往『☁️ 雲端同步』執行寫回。")
-                else:
-                    st.error("AI 回傳格式不正確，請再試一次。")
-                    st.code(raw_result) # 顯示原始結果方便 Debug
+                # 寫回雲端
+                conn.update(spreadsheet=SHEET_URL, data=updated_df)
+                st.success("✅ 雲端資料庫已完成橫向擴充！")
+                del st.session_state.temp_batch
+            except Exception as e:
+                st.error(f"同步失敗: {e}")
+    else:
+        st.info("緩存區空空的，先去量產單字吧！")
+
+# ==========================================
+# 4. 底部宣告
+# ==========================================
+st.markdown("---")
+st.caption("Kadowsella v1.0 Admin | 9-Column Architecture | 1號、2號、3號 Agent 聯動中")
