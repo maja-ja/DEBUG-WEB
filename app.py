@@ -4,117 +4,97 @@ from google import genai
 from streamlit_gsheets import GSheetsConnection
 
 # ==========================================
-# 1. 核心配置與欄位定義 (黃金 9 欄)
+# 1. 核心配置
 # ==========================================
-st.set_page_config(page_title="Kadowsella Admin v1.0", layout="wide")
+st.set_page_config(page_title="Kadowsella AI Editor", layout="wide")
 
-COL_NAMES_9 = [
-    'age', 'word', 'category', 'prefix', 'root', 
-    'suffix', 'phonetic', 'visual_vibe', 'field_app'
-]
+# 你的目標試算表連結
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1jTsd9IWQEMG6jfYmYnAJ9AO0NUIz8pp9iOku0Diyybo/edit#gid=618708785"
 
-# --- 初始化 Gemini ---
+# 初始化 Gemini
 try:
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-    MODEL_ID = "gemini-2.5-flash" 
+    MODEL_ID = "gemini-2.0-flash" # 或使用你偏好的模型
 except Exception as e:
     st.error(f"AI 初始化失敗: {e}")
 
-# --- 雲端連線 ---
+# 初始化 Google Sheets 連線
 conn = st.connection("gsheets", type=GSheetsConnection)
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1W1ADPyf5gtGdpIEwkxBEsaJ0bksYldf4AugoXnq6Zvg/edit?gid=751586037#gid=751586037"
+
+st.title("🤖 Kadowsella 雲端自動編輯器")
+st.info(f"當前目標分頁 GID: 618708785")
 
 # ==========================================
-# 2. 側邊欄選單 (定義 menu 變數)
+# 2. 資料讀取
 # ==========================================
-st.sidebar.title("🧩 Kadowsella Protocol")
-menu = st.sidebar.selectbox("功能選單", ["📊 資料總覽", "🏭 9欄位量產", "☁️ 雲端同步"])
+try:
+    # 讀取現有資料 (ttl=0 確保抓到最新)
+    df = conn.read(spreadsheet=SHEET_URL, ttl=0)
+    st.subheader("📊 雲端現有資料")
+    st.dataframe(df, use_container_width=True)
+except Exception as e:
+    st.error(f"讀取失敗: {e}")
+    st.stop()
 
 # ==========================================
-# 3. 核心功能邏輯
+# 3. AI 自動修改邏輯
 # ==========================================
+st.sidebar.header("AI 修改設定")
+instruction = st.sidebar.text_area("給 AI 的修改指令", 
+    value="請檢查所有欄位，修正錯字，並優化 visual_vibe 的描述，使其更具畫面感。保持繁體中文。")
 
-# --- 功能 A: 資料總覽 ---
-if menu == "📊 資料總覽":
-    st.title("📊 雲端倉庫總覽")
-    try:
-        df = conn.read(spreadsheet=SHEET_URL, ttl=0)
-        # 強制對齊前 9 欄
-        df = df.iloc[:, :9]
-        df.columns = COL_NAMES_9
-        st.session_state.db = df
-        st.dataframe(df, use_container_width=True)
-        st.write(f"當前庫存：{len(df)} 筆資料")
-    except Exception as e:
-        st.error(f"讀取失敗: {e}")
-
-# --- 功能 B: 9 欄位量產 ---
-elif menu == "🏭 9欄位量產":
-    st.title("🛠 Kadowsella 全齡量產模式")
-    
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        target_age = st.selectbox("目標年齡區間 (x歲)", [i for i in range(0, 101, 5)], index=2)
-        input_words = st.text_area("輸入單字 (逗號隔開)", "Algorithm, Neural Network, API")
-    
-    if st.button("🚀 啟動 Agent 生產線"):
-        words = [w.strip() for w in input_words.split(",") if w.strip()]
+if st.button("🚀 啟動 AI 自動優化"):
+    with st.spinner("AI 正在分析並修改資料..."):
+        # 將現有資料轉為 Markdown 格式給 AI 參考
+        table_context = df.to_markdown()
         
-        with st.spinner(f"正在為 {target_age} 歲打造專屬解釋..."):
-            prompt = f"""
-            你現在是 Kadowsella 開源計畫的專家。請針對單字清單：{words}
-            產出適合「{target_age} 歲」孩子理解的 9 欄位內容。
-            
-            格式要求：
-            1. 純文字輸出，欄位間用「|」隔開。
-            2. 順序：age|word|category|prefix|root|suffix|phonetic|visual_vibe|field_app
-            3. visual_vibe 必須有強烈畫面感（適合 6-10 歲）。
-            4. 語言：繁體中文。
-            """
-            
+        prompt = f"""
+        你現在是 Kadowsella 數據專家。
+        以下是來自 Google Sheets 的資料表：
+        
+        {table_context}
+        
+        任務指令：{instruction}
+        
+        要求：
+        1. 嚴格保持原有的欄位結構。
+        2. 以 CSV 格式輸出修改後的完整表格。
+        3. 不要輸出任何解釋文字，只要 CSV 內容。
+        """
+        
+        try:
             response = client.models.generate_content(model=MODEL_ID, contents=prompt)
-            lines = response.text.strip().split('\n')
             
-            new_rows = []
-            for line in lines:
-                parts = [p.strip() for p in line.split('|')]
-                if len(parts) == 9:
-                    new_rows.append(parts)
+            # 解析 AI 回傳的 CSV (假設 AI 回傳純文字 CSV)
+            from io import StringIO
+            # 清理可能存在的 markdown 標籤
+            csv_data = response.text.replace("```csv", "").replace("```", "").strip()
+            new_df = pd.read_csv(StringIO(csv_data))
             
-            if new_rows:
-                new_df = pd.DataFrame(new_rows, columns=COL_NAMES_9)
-                st.session_state.temp_batch = new_df
-                st.success(f"✅ 已產出 {len(new_df)} 筆暫存資料！")
-                st.data_editor(new_df)
-            else:
-                st.error("產出格式異常，請重試。")
-
-# --- 功能 C: 雲端同步 ---
-elif menu == "☁️ 雲端同步":
-    st.title("💾 同步至 Google Sheets")
-    
-    if 'temp_batch' in st.session_state:
-        st.write("待上傳的新資料：")
-        st.dataframe(st.session_state.temp_batch)
-        
-        if st.button("確認寫回雲端倉庫"):
-            try:
-                # 讀取舊資料並合併
-                old_df = conn.read(spreadsheet=SHEET_URL, ttl=0).iloc[:, :9]
-                old_df.columns = COL_NAMES_9
-                updated_df = pd.concat([old_df, st.session_state.temp_batch], ignore_index=True)
-                
-                # 寫回雲端
-                conn.update(spreadsheet=SHEET_URL, data=updated_df)
-                st.success("✅ 雲端資料庫已完成橫向擴充！")
-                del st.session_state.temp_batch
-            except Exception as e:
-                st.error(f"同步失敗: {e}")
-    else:
-        st.info("緩存區空空的，先去量產單字吧！")
+            st.subheader("✨ AI 修改建議預覽")
+            st.data_editor(new_df, key="editor")
+            st.session_state.updated_df = new_df
+            
+        except Exception as e:
+            st.error(f"AI 處理過程中出錯: {e}")
 
 # ==========================================
-# 4. 底部宣告
+# 4. 寫回雲端
 # ==========================================
+if 'updated_df' in st.session_state:
+    if st.button("💾 確認並同步至 Google Sheets"):
+        try:
+            with st.spinner("正在更新雲端資料..."):
+                conn.update(
+                    spreadsheet=SHEET_URL,
+                    data=st.session_state.updated_df
+                )
+                st.success("✅ 雲端資料已成功自動修改！")
+                st.balloons()
+                # 清除暫存
+                del st.session_state.updated_df
+        except Exception as e:
+            st.error(f"寫入失敗: {e}")
+
 st.markdown("---")
-st.caption("Kadowsella v1.0 Admin | 9-Column Architecture | 1號、2號、3號 Agent 聯動中")
+st.caption("直接連線模式：讀取 -> AI 修改 -> 覆蓋更新")
