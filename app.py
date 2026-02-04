@@ -15,7 +15,7 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/1jTsd9IWQEMG6jfYmYnAJ9AO0NUI
 # 初始化 Gemini
 try:
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-    MODEL_ID = "gemini-2.0-flash" 
+    MODEL_ID = "gemini-2.5-flash" 
 except Exception as e:
     st.error(f"AI 初始化失敗: {e}")
     st.stop()
